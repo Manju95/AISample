@@ -1,0 +1,11 @@
+## .NET
+bin/
+obj/
+*.user
+ 
+## Rider / JetBrains
+.idea/
+ 
+## Build results
+[Dd]ebug/
+[Rr]elease/
