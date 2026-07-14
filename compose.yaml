@@ -1,0 +1,90 @@
+﻿services:
+  ailearning:
+    image: ailearning
+    build:
+      context: .
+      dockerfile: AILearning/Dockerfile
+
+  postgres:
+    build:
+      context: AILearning/postgres
+      dockerfile: Dockerfile
+    container_name: ai-learning-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  flyway:
+    build:
+      context: AILearning/postgres/flyway
+      dockerfile: Dockerfile
+    container_name: ai-learning-flyway
+    restart: no
+    env_file: .env
+    command: >
+      -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      -user=${POSTGRES_USER}
+      -password=${POSTGRES_PASSWORD}
+      -locations=filesystem:/flyway/sql
+      -connectRetries=10
+      migrate
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: AILearning/Dockerfile
+    container_name: ai-learning-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres;
+        Port=5432;
+        Database=${POSTGRES_DB};
+        Username=${POSTGRES_USER};
+        Password=${POSTGRES_PASSWORD};
+        Pooling=true;
+        Minimum Pool Size=2;
+        Maximum Pool Size=20
+    ports:
+      - "${API_PORT:-8080}:8080"
+    networks:
+      - backend
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge
